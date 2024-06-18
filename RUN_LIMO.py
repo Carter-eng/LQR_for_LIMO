@@ -1,94 +1,160 @@
+#!/usr/bin/env python3
+
+"""
+This file is used to control the AgileX Limos in Rastic to follow a series of Waypoints.
+It uses the ROS setup from LIMO_ROS_SETUP.py and the linear quadratic regulator from LIMO_LQR.py.
+To use this, create a tracker object and pass the name of the Limo you are using,
+then pass a numpy array containing the sequence of waypoints to the trackTrajectory function in the following format:
+waypoints = np.array([[x1,x2],[y1,y2],[theta1,theta2],[v1,v2]])
+for waypoints waypoint1 = np.array([[x1],[y1],[theta1],[v1]]), waypoint2 = np.array([[x2],[y2],[theta2],[v2]]), 
+You can find an example of this in the "if __name__ == '__main__':" part of the file. 
+For best results, try to ensure that trajectories were generated based on the Limo's dynamic model.
+This code was adapted by Carter Berlind with significant changes.
+Original code received from Sienna Chien, original authors not listed.
+
+Description: Waypoint tracking for limos in Rastic
+"""
+
 import numpy as np
 import math
-import matplotlib.pyplot as plt
-import pygame
-import socket
 import time
 from geometry_msgs.msg import PoseStamped
 from ackermann_msgs.msg import AckermannDrive
 import rospy
-from LIMO_ROS_SETUP import CAV
+from LIMO_ROS_SETUP import LIMO
 import LIMO_LQR
 
-def main():
-    #initialize CAV, PID values, and another parameters
-    isMain1 = False
-    CAV1 = CAV("limo770")
+class Tracker:
+    def __init__(
+            self,
+            limo_name:str
+            ) -> None:
+        """
+        Tracker object used to follow a sequence of waypoints in a trajectory.
+        Using this sends all the infrastructure necessary to receive pose 
+        information form the motion capture and send controls to the robot to track a trajectory
 
-    transmissionRate = 10
-    dt = 1/transmissionRate # or 0.1
-    rate = rospy.Rate(transmissionRate) # 1Hz
-    v_ref_CAV1 = 0.5 # set between 0.5 and 0.6
-    lqr = LIMO_LQR.LQR()
-    speed = 0
-    x1 = np.array([
+        :param limo_name: ROS node and topic name for the Limo you are using.
+            This should match the name on the motion capture software.
+            -> str
+        """
+
+        # Create ROS node to communicate with the limo robot
+        self.LIMO1 = LIMO(limo_name)
+
+        # Frequency at which commands are sent to limo in Hz
+        self.transmissionRate = 10
+        self.dt = 1/self.transmissionRate 
+        self.rate = rospy.Rate(self.transmissionRate) 
+
+        # Define agent state
+        self.speed = 0 
+        self.steering_angle = 0
+        self.x=np.array([
+                    [self.LIMO1.position_z],
+                    [self.LIMO1.position_x],
+                    [self.LIMO1.position_yaw],
+                    [self.speed]
+                ])
+        
+        # Create LQR controller object
+        self.lqr = LIMO_LQR.LQR(dt=self.dt)
+
+        # Get initial linearization
+        self.A,self.B = self.lqr.getAB(self.LIMO1.position_yaw)
+    
+    def trackTrajectory(
+            self,
+            trajectory:np.ndarray,
+            stab_time:int = 20,
+            relin_steps:int = 2
+            ) -> None:
+        """
+        This function receives a trajectory of states and, using the motion capture
+        to localize, sends control commands to the limo to track the trajectory. 
+        Controls are found using a linear quadratic regulator.
+
+        :param trajectory: array of N waypoints that you want the robot to follow
+            -> 4xN NumPy array
+        :param stab_time: approximate number of time steps it takes to rach each point
+            -> int
+        :param relin_steps: number of time steps between each relinearization 
+            -> int
+        """
+        
+        # iterate through sequence of waypoints
+        for i in range(trajectory.shape[1]):
+            #isolate current waypoint
+            xd = trajectory[:,i:i+1]
+
+            # Approach the next waypoint for stab_time time steps
+            for count in range(stab_time,1,-1):
+
+                # Update position and speed from motion capture
+                # The speed is the previous velocity command
+                x=np.array([
+                    [self.LIMO1.position_z],
+                    [self.LIMO1.position_x],
+                    [self.LIMO1.position_yaw],
+                    [self.speed]
+                ])
+                
+                # Relinearize and find new gain matrix if relin_steps time steps have passed
+                if count%relin_steps == 0:
+                    self.A,self.B = self.lqr.getAB(x[2,0])
+                    K = self.lqr.getK(x,xd,count,self.A,self.B)
+
+                # Find the optimal control
+                # The control is the change in angular and linear velocities repectively
+                u = self.lqr.getControl(x,xd,K)
+
+                #Find change in steering steering angle based on desire
+                ang = math.asin(np.clip(u[0,0]*self.lqr.L/(u[1,0]+x[3,0]),-1,1))
+
+                # Update speed and steering angle
+                self.steering_angle += ang
+                self.speed += u[1,0]
+
+                #Ensure that inputs are within acceptable range
+                #This is an added redundancy to ensure the viability of control inputs
+                self.steering_angle = np.clip(self.steering_angle,-1,1)
+                self.speed = np.clip(self.speed,-1,1)
+                drive_msg_LIMO1 = self.LIMO1.control(self.speed,self.steering_angle)
+                self.LIMO1.pub.publish(drive_msg_LIMO1)
+
+                time.sleep(self.dt)
+                rospy.spin()
+
+        # After following the trajectory, stop
+        drive_msg_LIMO1 = self.LIMO1.control(0,0)
+        self.LIMO1.pub.publish(drive_msg_LIMO1)
+        
+if __name__ == '__main__':
+    """
+    Example of how to use trajectory tracking
+    If this file is run on its own, this is the code that will run
+    """
+
+    # Create a Tracker object
+    tracker = Tracker("limo770")
+
+    # Define waypoints, ideally your planning algorithm will output waypoints
+    waypoint1  = np.array([
         [.5],
         [1],
         [-.70],
         [0]
     ])
-    x2 = np.array([
+    waypoint2 = np.array([
         [1.0],
         [2.0],
         [-1.57],
         [0]
     ])
-    xs = [x1,x2]
-    x_plot = []
-    y_plot = []
-    A,B = lqr.getAB(CAV1.position_yaw)
-    #depending on if the car starts at main path or merging path, initialize different starting paths, points, and PID value
-    # access the array that stores the distance of each line, then change velocity if the length is quite large
-    # v_ref_CAV1 = 0.5 # set between 0.5 and 0.6, or higher if line is longer
 
-    for xd in xs:
-        for count in range(20,1,-1):
+    # Format waypoints to be as function expects
+    waypoints = np.hstack((waypoint1,waypoint2))
 
-        #if the cav is near a critical point (which are turning corners), set current line, starting point, and PID values to be that of the next line
-
-            x=np.array([
-                [CAV1.position_z],
-                [CAV1.position_x],
-                [CAV1.position_yaw],
-                [speed]
-            ])
-            # print(x,xd)
-            x_plot.append(x[0,0])
-            y_plot.append(x[1,0])
-            if not -2<x[0,0] or not x[0,0]<2:
-                now = time.time()
-                drive_msg_CAV1 = CAV1.control(0,0)
-                print(drive_msg_CAV1)
-                CAV1.pub.publish(drive_msg_CAV1)
-                break
-            if not -2<x[1,0] or not x[1,0]<2:
-                now = time.time()
-                drive_msg_CAV1 = CAV1.control(0,0)
-                print(drive_msg_CAV1)
-                CAV1.pub.publish(drive_msg_CAV1)
-                break
-            if count%2 == 0:
-                A,B = lqr.getAB(x[2,0])
-                K = lqr.getK(x,xd,count,A,B)
-            u = lqr.getControl(x,xd,K)
-            # u = lqr.lqr(x,xd,count,A,B)
-            ang = math.asin(np.clip(u[0,0]*lqr.L/(u[1,0]+x[3,0]),-1,1))
-            drive_msg_CAV1 = CAV1.control(u[1,0]+x[3,0],ang)
-            CAV1.pub.publish(drive_msg_CAV1)
-            speed = u[1,0]+x[3,0]
-
-            time.sleep(dt)
-
-
-            #rospy.spin()
-
-    drive_msg_CAV1 = CAV1.control(0,0)
-    CAV1.pub.publish(drive_msg_CAV1)
-    drive_msg_CAV1 = CAV1.control(0,0)
-    CAV1.pub.publish(drive_msg_CAV1)
-
-    #print(stop)
-    # plt.plot(x_plot[1:],y_plot[1:], '-r')
-    # plt.show()
-if __name__ == '__main__':
-    main()
+    #Call the tracker to follow waypoints
+    tracker.trackTrajectory(waypoints)
+    
