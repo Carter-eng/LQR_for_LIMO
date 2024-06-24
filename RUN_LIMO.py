@@ -41,12 +41,12 @@ class Tracker:
         """
 
         # Create ROS node to communicate with the limo robot
-        # self.LIMO1 = LIMO(limo_name)
+        self.LIMO1 = LIMO(limo_name)
 
         # Frequency at which commands are sent to limo in Hz
         self.transmissionRate = 10
         self.dt = 1/self.transmissionRate
-        # self.rate = rospy.Rate(self.transmissionRate)
+        self.rate = rospy.Rate(self.transmissionRate)
 
         # Define agent state
         self.speed = 0
