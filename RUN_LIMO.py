@@ -18,12 +18,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import time
-# from geometry_msgs.msg import PoseStamped
-# from ackermann_msgs.msg import AckermannDrive
-# import rospy
-# from LIMO_ROS_SETUP import LIMO
-import LIMO_LQR_1
-from nonLinModel import *
+from geometry_msgs.msg import PoseStamped
+from ackermann_msgs.msg import AckermannDrive
+import rospy
+from LIMO_ROS_SETUP import LIMO
+import LIMO_LQR
+
 
 class Tracker:
     def __init__(
