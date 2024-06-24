@@ -130,7 +130,7 @@ class Tracker:
                 #Ensure that inputs are within acceptable range
                 #This is an added redundancy to ensure the viability of control inputs
 
-                self.steering_angle = np.clip(ang,-.7,.7)
+                self.steering_angle = np.clip(ang,-1.0,1.0)
             
                 self.speed = np.clip(self.speed,-1,1)
 
