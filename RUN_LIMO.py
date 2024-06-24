@@ -62,7 +62,7 @@ class Tracker:
 
 
         # Create LQR controller object
-        self.lqr = LIMO_LQR_1.LQR(dt=self.dt)
+        self.lqr = LIMO_LQR.LQR(dt=self.dt)
         self.theta_dot = 0
         # Get initial linearization
         [self.A,self.B] = self.lqr.getAB(self.x[2,0])
