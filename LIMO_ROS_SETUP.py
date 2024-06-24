@@ -73,7 +73,7 @@ class LIMO():
         # The Mocap send us orientation information in quaternions
         # This means we need to run a conversion if we want Euler Angles (Pitch,Yaw,Roll)
         # Because our robot is modeled as planar, we only care about the yaw
-        _,yaw,_ = self.quaternion_to_euler(msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w)
+        [_,yaw,_] = self.quaternion_to_euler(msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w)
         self.position_yaw =  yaw
 
         #This will only be 1 if you recieve mocap data, you use this to troupbleshoot
@@ -104,7 +104,7 @@ class LIMO():
             y:float, 
             z:float, 
             w:float
-            ) -> float | float | float:
+            ) -> list:
         """
         The motion capture tells us the orientation in quaternions. 
         Quaternions are a powerful tool for computation of angles in 3D
@@ -147,7 +147,7 @@ class LIMO():
 
         # Note that because the floor is the z-x plane, the yaw is the
         # roation about the y axis
-        return x, y, z # in radians
+        return [x, y, z] # in radians
 
     def control(self,
             v_ref:float, 
