@@ -112,7 +112,6 @@ class Tracker:
                 # Relinearize and find new gain matrix if relin_steps time steps have passed
                 if count%relin_steps == 0:
                     [self.A,self.B] = self.lqr.getAB(self.x[2,0])
-                    [self.A2,self.B2] = self.lqr.getAB(self.x_simp[2,0])
                     K = self.lqr.getK(count,self.A,self.B)
 
 
